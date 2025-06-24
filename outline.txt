@@ -1,0 +1,17 @@
+Arithmetic expression calculator in asm that supports
+operators (), +, - (binary, unary), *, /, % and floating-point numbers also.
+It will work for double precision floating-point numbers only (fit in 8 bytes)
+
+Operators priorities (from highest to lowest)
+() (parentheses)
+- (unary)
+*, /, %
++, - (binary)
+
+Example 1.
+Input:
+1 + (-1.1 + 2) * 2 % 1.5
+
+Output:
+1.3
+
