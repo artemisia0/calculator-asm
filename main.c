@@ -1,10 +1,11 @@
 #include <stdio.h>
 #include <inttypes.h>
+#include <string.h>
 
 
 // Implemented in asm module and then linked together
 // If input expression is invalid then output is NaN
-extern double eval_string_expression(const char*);
+extern double eval_string_expression(const char*, unsigned int);
 
 enum {
   INPUT_LINE_SIZE = 1024,
@@ -20,9 +21,10 @@ int main() {
     }
     // I also added awesome style, colors + bold font
     // It should work fine on most linux
-    printf("\033[1;32m%.15lf\033[0;m\n", eval_string_expression(input_line));
+    printf("\033[1;32m%.15lf\033[0;m\n",
+       eval_string_expression(input_line, strlen(input_line)));
     // If colors are not supported then try this
-    // printf("%f\n", eval_string_expression(input_line));
+    // printf("%f\n", eval_string_expression(input_line, strlen(input_line)));
   }
   return 0;
 }
