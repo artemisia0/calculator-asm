@@ -33,6 +33,11 @@ eval_string_expression:  # Return value is in %xmm0
 
   call process_sum
 
+  cmp input_string_size(%rip), %rcx
+  jge eval_string_expression_exit
+  movsd nan_value(%rip), %xmm0
+
+eval_string_expression_exit:
   leave
   ret
 
@@ -148,11 +153,11 @@ process_term_number:
   mov input_string(%rip), %rdi
   add %rcx, %rdi
   lea strtod_end(%rip), %rsi
-  push %rcx  # pushing twice for stack alignment
-  push %rcx  # but it would probably be simpler to subtract 16 from %rsp
-  call strtod
-  pop %rcx
-  pop %rcx
+  sub $16, %rsp
+  mov %rcx, 0(%rsp)  # I need to save %rcx cause there is string index
+  call strtod  # SOMEWHERE HERE IS A VERY STRANGE BUG FIXME TODO
+  mov 0(%rsp), %rcx
+  add $16, %rsp
   mov strtod_end(%rip), %r8
   mov input_string(%rip), %rax
   sub %rax, %r8
@@ -180,7 +185,8 @@ skip_whitespaces:
   push %rbp
   mov %rsp, %rbp
 skip_whitespaces_loop:
-  call peek_op
+  mov input_string(%rip), %rsi
+  movzbl (%rsi, %rcx, 1), %eax
   cmpb $' ', %al
   jne skip_whitespaces_loop_exit
   inc %rcx
@@ -194,6 +200,7 @@ skip_whitespaces_loop_exit:
 peek_op:
   push %rbp
   mov %rsp, %rbp
+  call skip_whitespaces
   cmp input_string_size(%rip), %rcx
   jge peek_op_bad_index
   mov input_string(%rip), %rsi

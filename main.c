@@ -20,10 +20,15 @@ int main() {
     if (fgets(input_line, INPUT_LINE_SIZE, stdin) == NULL) {
       break;
     }
+    int chars_read = strlen(input_line);
+    if (chars_read > 0) {  // Ignoring newline character
+      input_line[chars_read-1] = 0;
+    }
+    printf("%d\n", strlen(input_line));
     double res = eval_string_expression(input_line, strlen(input_line));
     if (isnan(res)) {
       printf("\033[1;31mInvalid expression error :(\033[0;m\n");
-      break;
+      continue;
     }
     // I also added awesome style, colors + bold font
     // It should work fine on most linux
