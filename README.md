@@ -8,6 +8,12 @@ Some examples:
 ```
    1   +(3+2.5)%2.5  => 1.5
 ```
+```
+-5*-5/5  => 5
+```
+```
+-3.14 % (2 -(-(-(-(-(-1))))))  => -0.14
+```
 
 Main idea of an algorithm (written in some unknown language):
 
