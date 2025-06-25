@@ -13,15 +13,6 @@ eval_string_expression:  # Return value is in %xmm0
   push %rbp
   mov %rsp, %rbp
 
-  # Clear some xmm registers that will be used
-  # because right 8 bytes will be used only but registers are 16 bytes size.
-  # It probably is not necessary but highly recommended anyway
-  pxor %xmm0, %xmm0
-  pxor %xmm1, %xmm1
-  pxor %xmm2, %xmm2
-  pxor %xmm3, %xmm3
-  pxor %xmm4, %xmm4
-
   # Calculating nan_value by dividing zero by zero
   movsd zero(%rip), %xmm0
   divsd zero(%rip), %xmm0
@@ -30,6 +21,11 @@ eval_string_expression:  # Return value is in %xmm0
   mov %rdi, input_string(%rip)
   mov %rsi, input_string_size(%rip)
   xor %rcx, %rcx  # Input string index is in rcx
+
+  # Clear some xmm registers that will be used
+  pxor %xmm0, %xmm0
+  pxor %xmm1, %xmm1
+  pxor %xmm2, %xmm2
 
   call process_sum
 
@@ -57,10 +53,20 @@ process_sum:
   jmp process_sum_loop_exit
 
 process_sum_loop:
-  push %rax  # saving operator
   inc %rcx  # consuming operator because we have already processed it
+
+  push %rax  # twice for stack alignment
+  push %rax
+  sub $16, %rsp
+  movaps %xmm1, (%rsp)
+
   call process_product
+
+  movaps (%rsp), %xmm1
+  add $16, %rsp
   pop %rax
+  pop %rax
+
   call apply_sum_op
 
   call peek_op
@@ -94,10 +100,20 @@ process_product:
   jmp process_product_loop_exit
 
 process_product_loop:
-  push %rax  # saving operator
   inc %rcx  # consuming operator because we have already processed it
+
+  push %rax  # twice for stack alignment
+  push %rax  # twice for stack alignment
+  sub $16, %rsp
+  movaps %xmm1, (%rsp)
+
   call process_term
+  
+  movaps (%rsp), %xmm1
+  add $16, %rsp
   pop %rax
+  pop %rax
+
   call apply_product_op
 
   call peek_op
@@ -153,14 +169,20 @@ process_term_number:
   mov input_string(%rip), %rdi
   add %rcx, %rdi
   lea strtod_end(%rip), %rsi
+  push %rcx
+  push %rdi
+  
   sub $16, %rsp
-  mov %rcx, 0(%rsp)  # I need to save %rcx cause there is string index
-  call strtod  # SOMEWHERE HERE IS A VERY STRANGE BUG FIXME TODO
-  mov 0(%rsp), %rcx
+  movaps %xmm1, (%rsp)
+  call strtod
+  
+  movaps (%rsp), %xmm1
   add $16, %rsp
+  
+  pop %rdi
+  pop %rcx
   mov strtod_end(%rip), %r8
-  mov input_string(%rip), %rax
-  sub %rax, %r8
+  sub %rdi, %r8
   add %r8, %rcx
   # parsed number is already in %xmm0 due to strtod function call
   # most of the work done in this label is just for %rcx index shifting
@@ -168,14 +190,30 @@ process_term_number:
 
 process_term_unary_minus:
   inc %rcx  # skipping that minus
+  
+  sub $16, %rsp
+  movaps %xmm1, (%rsp)
+  
   call process_term
+  
+  movaps (%rsp), %xmm1
+  add $16, %rsp
+
   movq sign_mask(%rip), %xmm1
   xorpd %xmm1, %xmm0  # flipping the sign bit
   jmp process_term_exit
 
 process_term_grouping:
   inc %rcx  # skipping that '('
+  
+  sub $16, %rsp
+  movaps %xmm1, (%rsp)
+
   call process_sum
+  
+  movaps (%rsp), %xmm1
+  add $16, %rsp
+  
   # assert that next char is ')'
   # for now I assume that the given expression is valid FIXME TODO
   inc %rcx  # skipping that ')'

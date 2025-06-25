@@ -24,7 +24,6 @@ int main() {
     if (chars_read > 0) {  // Ignoring newline character
       input_line[chars_read-1] = 0;
     }
-    printf("%d\n", strlen(input_line));
     double res = eval_string_expression(input_line, strlen(input_line));
     if (isnan(res)) {
       printf("\033[1;31mInvalid expression error :(\033[0;m\n");
