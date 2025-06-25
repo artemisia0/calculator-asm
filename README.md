@@ -1,19 +1,12 @@
 Some examples:
-input:
 ```
-2 + 2
+2 + 2*2  => 6
 ```
-output:
 ```
-4
+1 + (-1.1 + 2) * 2 % 1.5  => 1.3
 ```
-input:
 ```
-1 + (-1.1 + 2) * 2 % 1.5
-```
-output:
-```
-1.3
+   1   +(3+2.5)%2.5  => 1.5
 ```
 
 Main idea of an algorithm (written in some unknown language):
