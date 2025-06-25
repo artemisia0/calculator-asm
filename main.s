@@ -145,18 +145,18 @@ process_term:
   pop %rcx
   cmp $0, %eax
   jne process_term_number
-  jmp process_term_exit
 
   # Testing if there is unary minus on input
   call peek_op
   cmpb $'-', %al
   je process_term_unary_minus
-  jmp process_term_exit
 
   # Testing if there is left parentesis on input
   call peek_op
   cmpb $'(', %al
   je process_term_grouping
+
+  # FIXME TODO add error handling, put NaN in xmm0 or so
   jmp process_term_exit
 
 process_term_exit:
