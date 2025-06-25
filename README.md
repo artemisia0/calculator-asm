@@ -15,13 +15,13 @@ Some examples:
 -3.14 % (2 -(-(-(-1)))) ==> -0.14
 ```
 ```
-7-                      ==> Invalid expression error :(
+7-                      ==> Invalid expression :(
 ```
 ```
 (3)                     ==> 3
 ```
 ```
-()                      ==> Invalid expression error :(
+()                      ==> Invalid expression :(
 ```
 
 Main idea of an algorithm (written in some unknown language):
