@@ -37,23 +37,38 @@ eval_string_expression_exit:
   leave
   ret
 
+return_nan:  # helper label for some functions (useful for error handling)
+  movsd nan_value(%rip), %xmm0
+  leave
+  ret
+
 process_sum:
   push %rbp
   mov %rsp, %rbp
 
   call process_product  # and so now processed product is in %xmm0
   movsd %xmm0, %xmm1  # see algorithm in readme, that v is %xmm1, u is %xmm0
+  # if process_product returned NaN then the result will also be NaN
+
+  cmp input_string_size(%rip), %rcx
+  jge process_sum_loop_exit
 
   call peek_op
   cmpb $'+', %al
   je process_sum_loop
   cmpb $'-', %al
   je process_sum_loop
-
-  jmp process_sum_loop_exit
+  cmpb $0, %al
+  je process_sum_loop_exit
+  cmpb $')', %al
+  je process_sum_loop_exit
+  jmp return_nan  # got bad infix operator
 
 process_sum_loop:
   inc %rcx  # consuming operator because we have already processed it
+
+  cmp input_string_size(%rip), %rcx  # error: no right operand
+  jge return_nan
 
   push %rax  # twice for stack alignment
   push %rax
@@ -61,6 +76,7 @@ process_sum_loop:
   movaps %xmm1, (%rsp)
 
   call process_product
+  # if this returns NaN then the result will also be NaN
 
   movaps (%rsp), %xmm1
   add $16, %rsp
@@ -74,9 +90,13 @@ process_sum_loop:
   je process_sum_loop
   cmpb $'-', %al
   je process_sum_loop
+  cmpb $0, %al
+  je process_sum_loop_exit
+  cmpb $')', %al
+  je process_sum_loop_exit
+  jmp return_nan
 
 process_sum_loop_exit:
-
   movsd %xmm1, %xmm0  # make v return value
 
   leave
@@ -88,6 +108,10 @@ process_product:
 
   call process_term
   movsd %xmm0, %xmm1  # see algorithm in readme, that v is %xmm1, u is %xmm0
+  # if process_term returns NaN then result will also be NaN
+
+  cmp input_string_size(%rip), %rcx
+  jge process_product_loop_exit
 
   call peek_op
   cmpb $'*', %al
@@ -96,11 +120,21 @@ process_product:
   je process_product_loop
   cmpb $'%', %al
   je process_product_loop
-
-  jmp process_product_loop_exit
+  cmpb $'+', %al
+  je process_product_loop_exit
+  cmpb $'-', %al
+  je process_product_loop_exit
+  cmpb $')', %al
+  je process_product_loop_exit
+  cmpb $0, %al
+  je process_product_loop_exit
+  jmp return_nan
 
 process_product_loop:
   inc %rcx  # consuming operator because we have already processed it
+
+  cmp input_string_size(%rip), %rcx  # error: no right operand
+  jge return_nan
 
   push %rax  # twice for stack alignment
   push %rax  # twice for stack alignment
@@ -108,6 +142,7 @@ process_product_loop:
   movaps %xmm1, (%rsp)
 
   call process_term
+  # if this returns NaN then result will also be NaN
   
   movaps (%rsp), %xmm1
   add $16, %rsp
@@ -123,9 +158,17 @@ process_product_loop:
   je process_product_loop
   cmpb $'%', %al
   je process_product_loop
+  cmpb $'+', %al
+  je process_product_loop_exit
+  cmpb $'-', %al
+  je process_product_loop_exit
+  cmpb $')', %al
+  je process_product_loop_exit
+  cmpb $0, %al
+  je process_product_loop_exit
+  jmp return_nan
 
 process_product_loop_exit:
-
   movsd %xmm1, %xmm0  # make v return value
 
   leave
@@ -134,6 +177,9 @@ process_product_loop_exit:
 process_term:
   push %rbp
   mov %rsp, %rbp
+
+  cmp input_string_size(%rip), %rcx
+  jge return_nan
 
   # Testing if there is a number on input
   call peek_op
@@ -151,16 +197,13 @@ process_term:
   cmpb $'-', %al
   je process_term_unary_minus
 
-  # Testing if there is left parentesis on input
+  # Testing if there is left parenthesis on input
   call peek_op
   cmpb $'(', %al
   je process_term_grouping
-
-  # FIXME TODO add error handling, put NaN in xmm0 or so
-  jmp process_term_exit
+  jmp return_nan
 
 process_term_exit:
-
   leave
   ret
 
@@ -190,6 +233,9 @@ process_term_number:
 
 process_term_unary_minus:
   inc %rcx  # skipping that minus
+
+  cmp input_string_size(%rip), %rcx
+  jge return_nan
   
   sub $16, %rsp
   movaps %xmm1, (%rsp)
@@ -206,6 +252,9 @@ process_term_unary_minus:
 process_term_grouping:
   inc %rcx  # skipping that '('
   
+  cmp input_string_size(%rip), %rcx
+  jge return_nan
+
   sub $16, %rsp
   movaps %xmm1, (%rsp)
 
@@ -214,8 +263,14 @@ process_term_grouping:
   movaps (%rsp), %xmm1
   add $16, %rsp
   
+  cmp input_string_size(%rip), %rcx
+  jge return_nan
+
   # assert that next char is ')'
-  # for now I assume that the given expression is valid FIXME TODO
+  call peek_op
+  cmp $')', %al
+  jne return_nan
+
   inc %rcx  # skipping that ')'
   jmp process_term_exit
 
