@@ -22,8 +22,8 @@ eval_string_expression:
 
   # Clear some xmm registers that will be used
   pxor %xmm0, %xmm0
-  pxor %xmm8, %xmm8
-  pxor %xmm9, %xmm9
+  pxor %xmm8, %xmm8  # eval_sum function local variable ('res' from readme)
+  pxor %xmm9, %xmm9  # eval_product func. local variable ('res' from readme)
 
   call eval_sum
 
@@ -49,7 +49,7 @@ eval_sum:
   jge eval_sum_exit
 eval_sum_loop:
 # checking if current character is '+' or '-' and if yes
-# then calculating other operand(s) and applying corresponding operation (-/+)
+# then calculating other operand(s) and applying corresponding operation (-+)
   mov $'+', %rdi
   call match_char
   test %rax, %rax
@@ -58,7 +58,6 @@ eval_sum_loop:
   call match_char
   test %rax, %rax
   jnz eval_sum_apply_minus_operator
-eval_sum_loop_exit_check:
 # if peek_char() == 0 || peek_char() == ')' then exit from loop
   call peek_char
   test %rax, %rax
@@ -90,77 +89,76 @@ eval_sum_exit_with_error:
   ret
 
 
-process_product:
+# Returns double (in %xmm0).
+# Note: %xmm9 will be used as a local variable (it is that 'res' from readme)
+eval_product:
   push %rbp
   mov %rsp, %rbp
-
-  call process_term
-  movsd %xmm0, %xmm1  # see algorithm in readme, that v is %xmm1, u is %xmm0
-  # if process_term returns NaN then result will also be NaN
-
-  cmp input_string_size(%rip), %rcx
-  jge process_product_loop_exit
-
-  call peek_op
-  cmpb $'*', %al
-  je process_product_loop
-  cmpb $'/', %al
-  je process_product_loop
-  cmpb $'%', %al
-  je process_product_loop
-  cmpb $'+', %al
-  je process_product_loop_exit
-  cmpb $'-', %al
-  je process_product_loop_exit
+  call eval_primary
+  movsd %xmm0, %xmm9
+  mov current_ch_index(%rip), %rax
+  cmp input_string_size(%rip), %rax
+  jge eval_product_exit
+eval_product_loop:
+# checking if current character is one of '*', '/' or '%' and if yes
+# then calculating other operand(s) and applying corresponding operation (*%/)
+  mov $'*', %rdi
+  call match_char
+  test %rax, %rax
+  jnz eval_product_apply_mul_operation
+  mov $'/', %rdi
+  call match_char
+  test %rax, %rax
+  jnz eval_product_apply_div_operation
+  mov $'%', %rdi
+  call match_char
+  test %rax, %rax
+  jnz eval_product_apply_mod_operation
+# if peek_char() == 0 || peek_char() == ')'
+# || peek_char() == '+' || peek_char() == '-' then exit from loop
+  call peek_char
+  test %rax, %rax
+  jz eval_product_exit
   cmpb $')', %al
-  je process_product_loop_exit
-  cmpb $0, %al
-  je process_product_loop_exit
-  jmp return_nan
-
-process_product_loop:
-  inc %rcx  # consuming operator because we have already processed it
-
-  cmp input_string_size(%rip), %rcx  # error: no right operand
-  jge return_nan
-
-  push %rax  # twice for stack alignment
-  push %rax  # twice for stack alignment
-  sub $16, %rsp
-  movaps %xmm1, (%rsp)
-
-  call process_term
-  # if this returns NaN then result will also be NaN
-  
-  movaps (%rsp), %xmm1
-  add $16, %rsp
-  pop %rax
-  pop %rax
-
-  call apply_product_op
-
-  call peek_op
-  cmpb $'*', %al
-  je process_product_loop
-  cmpb $'/', %al
-  je process_product_loop
-  cmpb $'%', %al
-  je process_product_loop
+  jz eval_product_exit
   cmpb $'+', %al
-  je process_product_loop_exit
+  jz eval_product_exit
   cmpb $'-', %al
-  je process_product_loop_exit
-  cmpb $')', %al
-  je process_product_loop_exit
-  cmpb $0, %al
-  je process_product_loop_exit
-  jmp return_nan
-
-process_product_loop_exit:
-  movsd %xmm1, %xmm0  # make v return value
-
+  jz eval_product_exit
+  jmp eval_product_exit_with_error  # invalid operator
+eval_product_apply_mul_operator:
+  mov current_ch_index(%rip), %rax
+  cmp input_string_size(%rip), %rax
+  jge eval_product_exit_with_error  # there is an operator but no operand
+  call eval_primary
+  mulsd %xmm0, %xmm9
+  jmp eval_product_loop
+eval_product_apply_div_operator:
+  mov current_ch_index(%rip), %rax
+  cmp input_string_size(%rip), %rax
+  jge eval_product_exit_with_error  # there is an operator but no operand
+  call eval_primary
+  divsd %xmm0, %xmm9
+  jmp eval_product_loop
+eval_product_apply_mod_operator:
+  mov current_ch_index(%rip), %rax
+  cmp input_string_size(%rip), %rax
+  jge eval_product_exit_with_error  # there is an operator but no operand
+  call eval_primary
+  movsd %xmm0, %xmm1
+  movsd %xmm9, %xmm0
+  call fmod
+  movsd %xmm0, %xmm9
+  jmp eval_product_loop
+eval_product_exit:
+  movsd %xmm9, %xmm0  # make that local variable a return value
   leave
   ret
+eval_product_exit_with_error:
+  movsd nan_value(%rip), %xmm0
+  leave
+  ret
+
 
 process_term:
   push %rbp
