@@ -4,7 +4,7 @@ nan_value:          .quad 0x7ff8000000000000
 strtod_end:         .quad 0  # will be passed as an arg to strtod function
 input_string:       .quad 0
 input_string_size:  .quad 0
-current_ch_index:   .quad 0  # index of a char that is being processed now
+current_char_index:   .quad 0  # index of a char that is being processed now
 
 .text
 .globl eval_string_expression
@@ -24,14 +24,14 @@ eval_string_expression:
   pxor %xmm0, %xmm0
   pxor %xmm8, %xmm8  # eval_sum function local variable ('res' from readme)
   pxor %xmm9, %xmm9  # eval_product func. local variable ('res' from readme)
+  pxor %xmm10, %xmm10  # eval_primary func. local var.
 
   call eval_sum
 
-  mov current_ch_index(%rip), %rax
+  mov current_char_index(%rip), %rax
   cmp input_string_size(%rip), %rax
   jge eval_string_expression_exit
-  movsd nan_value(%rip), %xmm0
-
+  movq nan_value(%rip), %xmm0
 eval_string_expression_exit:
   leave
   ret
@@ -44,7 +44,7 @@ eval_sum:
   mov %rsp, %rbp
   call eval_product
   movsd %xmm0, %xmm8
-  mov current_ch_index(%rip), %rax
+  mov current_char_index(%rip), %rax
   cmp input_string_size(%rip), %rax
   jge eval_sum_exit
 eval_sum_loop:
@@ -66,16 +66,10 @@ eval_sum_loop:
   jz eval_sum_exit
   jmp eval_sum_exit_with_error  # invalid operator
 eval_sum_apply_plus_operator:
-  mov current_ch_index(%rip), %rax
-  cmp input_string_size(%rip), %rax
-  jge eval_sum_exit_with_error  # there is an operator but no operand
   call eval_product
   addsd %xmm0, %xmm8
   jmp eval_sum_loop
 eval_sum_apply_minus_operator:
-  mov current_ch_index(%rip), %rax
-  cmp input_string_size(%rip), %rax
-  jge eval_sum_exit_with_error  # there is an operator but no operand
   call eval_product
   subsd %xmm0, %xmm8
   jmp eval_sum_loop
@@ -84,7 +78,7 @@ eval_sum_exit:
   leave
   ret
 eval_sum_exit_with_error:
-  movsd nan_value(%rip), %xmm0
+  movq nan_value(%rip), %xmm0
   leave
   ret
 
@@ -96,7 +90,7 @@ eval_product:
   mov %rsp, %rbp
   call eval_primary
   movsd %xmm0, %xmm9
-  mov current_ch_index(%rip), %rax
+  mov current_char_index(%rip), %rax
   cmp input_string_size(%rip), %rax
   jge eval_product_exit
 eval_product_loop:
@@ -127,23 +121,14 @@ eval_product_loop:
   jz eval_product_exit
   jmp eval_product_exit_with_error  # invalid operator
 eval_product_apply_mul_operator:
-  mov current_ch_index(%rip), %rax
-  cmp input_string_size(%rip), %rax
-  jge eval_product_exit_with_error  # there is an operator but no operand
   call eval_primary
   mulsd %xmm0, %xmm9
   jmp eval_product_loop
 eval_product_apply_div_operator:
-  mov current_ch_index(%rip), %rax
-  cmp input_string_size(%rip), %rax
-  jge eval_product_exit_with_error  # there is an operator but no operand
   call eval_primary
   divsd %xmm0, %xmm9
   jmp eval_product_loop
 eval_product_apply_mod_operator:
-  mov current_ch_index(%rip), %rax
-  cmp input_string_size(%rip), %rax
-  jge eval_product_exit_with_error  # there is an operator but no operand
   call eval_primary
   movsd %xmm0, %xmm1
   movsd %xmm9, %xmm0
@@ -155,195 +140,129 @@ eval_product_exit:
   leave
   ret
 eval_product_exit_with_error:
-  movsd nan_value(%rip), %xmm0
+  movq nan_value(%rip), %xmm0
   leave
   ret
 
 
-process_term:
+# Returns double (in %xmm0)
+# Note: this function uses %xmm10 as a local variable ('res' from readme)
+eval_primary:
   push %rbp
   mov %rsp, %rbp
-
-  cmp input_string_size(%rip), %rcx
-  jge return_nan
-
-  # Testing if there is a number on input
-  call peek_op
-  mov %eax, %edi
-  push %rcx  # two times for stack alignment
-  push %rcx
+  mov current_char_index(%rip), %rax
+  cmp input_string_size(%rip), %rax
+  jge eval_primary_exit_with_error
+  # if peek_char() is a digit (then primary expression must be a number)
+  call peek_char
+  mov %rax, %rdi
   call isdigit
-  pop %rcx
-  pop %rcx
-  cmp $0, %eax
-  jne process_term_number
-
-  # Testing if there is unary minus on input
-  call peek_op
-  cmpb $'-', %al
-  je process_term_unary_minus
-
-  # Testing if there is left parenthesis on input
-  call peek_op
-  cmpb $'(', %al
-  je process_term_grouping
-  jmp return_nan
-
-process_term_exit:
+  test %rax, %rax
+  jnz eval_primary_number
+  # if match_char('-') (then it is primary expression with unary minus)
+  mov $'-', %rdi
+  call match_char
+  test %rax, %rax
+  jnz eval_primary_with_unary_minus
+  # if match_char('(')
+  mov $'(', %rdi
+  call match_char
+  test %rax, %rax
+  jnz eval_primary_grouping
+  jmp eval_primary_exit_with_error  # invalid operand
+eval_primary_number:
+  mov input_string(%rip), %rdi
+  mov current_char_index(%rip), %rax
+  add %rax, %rdi
+  lea strtod_end(%rip), %rsi
+  # double strtod(const char* str, char** end);
+  call strtod
+  mov strtod_end(%rip), %rax
+  sub input_string(%rip), %rax
+  mov %rax, current_char_index(%rip)
+  jmp eval_primary_exit
+eval_primary_with_unary_minus:
+  call eval_primary
+  xorpd sign_mask(%rip), %xmm0
+  jmp eval_primary_exit
+eval_primary_grouping:
+  call eval_sum
+  mov $')', %rdi
+  call match_char
+  test %rax, %rax
+  jz eval_primary_exit_with_error
+  jmp eval_primary_exit
+eval_primary_exit:
   leave
   ret
 
-# double strtod(const char* str, char** end);
-process_term_number:
-  mov input_string(%rip), %rdi
-  add %rcx, %rdi
-  lea strtod_end(%rip), %rsi
-  push %rcx
-  push %rdi
-  
-  sub $16, %rsp
-  movaps %xmm1, (%rsp)
-  call strtod
-  
-  movaps (%rsp), %xmm1
-  add $16, %rsp
-  
-  pop %rdi
-  pop %rcx
-  mov strtod_end(%rip), %r8
-  sub %rdi, %r8
-  add %r8, %rcx
-  # parsed number is already in %xmm0 due to strtod function call
-  # most of the work done in this label is just for %rcx index shifting
-  jmp process_term_exit
 
-process_term_unary_minus:
-  inc %rcx  # skipping that minus
+# Arg #1: character in %rdi.
+# Returns 1 or 0 (in %rax).
+# Note that this function increments current_char_index if char in %rdi
+# matches current non-whitespace char in input_string.
+# It means that match_char consumes char on match while
+# peek_char just returns current non-whitespace char.
+match_char:
+  push %rbp
+  mov %rsp, %rbp
+  call skip_whitespaces
+  # Note that it is not necessary to check
+  # if input_string_size > current_char_index (works fine anyway)
+  call peek_char
+  cmp %rdi, %rax
+  jz match_char_exit_with_one
+  jmp match_char_exit_with_zero
+match_char_exit_with_one:
+  mov current_char_index(%rip), %rax
+  inc %rax
+  mov %rax, current_char_index(%rip)
+  mov $1, %rax
+  leave
+  ret
+match_char_exit_with_zero:
+  xor %rax, %rax
+  leave
+  ret
 
-  cmp input_string_size(%rip), %rcx
-  jge return_nan
-  
-  sub $16, %rsp
-  movaps %xmm1, (%rsp)
-  
-  call process_term
-  
-  movaps (%rsp), %xmm1
-  add $16, %rsp
 
-  movq sign_mask(%rip), %xmm1
-  xorpd %xmm1, %xmm0  # flipping the sign bit
-  jmp process_term_exit
+# Returns non-whitespace char that is being processed at the moment (in %rax)
+peek_char:
+  push %rbp
+  mov %rsp, %rbp
+  call skip_whitespaces
+  mov current_char_index(%rip), %rax
+  cmp input_string_size(%rip), %rax
+  jge peek_char_exit_with_zero
+  mov input_string(%rip), %rsi
+  mov current_char_index(%rip), %rcx
+  movzbl (%rsi, %rcx, 1), %rax
+  jmp peek_char_exit
+peek_char_exit_with_zero:
+  xor %rax, %rax
+  leave
+  ret
+peek_char_exit:
+  leave
+  ret
 
-process_term_grouping:
-  inc %rcx  # skipping that '('
-  
-  cmp input_string_size(%rip), %rcx
-  jge return_nan
-
-  sub $16, %rsp
-  movaps %xmm1, (%rsp)
-
-  call process_sum
-  
-  movaps (%rsp), %xmm1
-  add $16, %rsp
-  
-  cmp input_string_size(%rip), %rcx
-  jge return_nan
-
-  # assert that next char is ')'
-  call peek_op
-  cmp $')', %al
-  jne return_nan
-
-  inc %rcx  # skipping that ')'
-  jmp process_term_exit
 
 skip_whitespaces:
   push %rbp
   mov %rsp, %rbp
 skip_whitespaces_loop:
   mov input_string(%rip), %rsi
-  movzbl (%rsi, %rcx, 1), %eax
-  cmpb $' ', %al
-  jne skip_whitespaces_loop_exit
-  inc %rcx
+  mov current_char_index(%rip), %rcx
   cmp input_string_size(%rip), %rcx
-  jge skip_whitespaces_loop_exit
+  jge skip_whitespaces_exit
+  movzbl (%rsi, %rcx, 1), %eax
+  cmp $' ', %al
+  jnz skip_whitespaces_exit
+  mov current_char_index(%rip), %rax
+  inc %rax
+  mov %rax, current_char_index(%rip)
   jmp skip_whitespaces_loop
-skip_whitespaces_loop_exit:
-  leave
-  ret
-
-peek_op:
-  push %rbp
-  mov %rsp, %rbp
-  call skip_whitespaces
-  cmp input_string_size(%rip), %rcx
-  jge peek_op_bad_index
-  mov input_string(%rip), %rsi
-  movzbl (%rsi, %rcx, 1), %eax
-peek_op_exit:
-  leave
-  ret
-peek_op_bad_index:
-  mov $0, %eax
-  jmp peek_op_exit
-
-apply_sum_op:  # %xmm1 ?= %xmm0 (return value is in %xmm1, NOT %xmm0)
-  push %rbp
-  mov %rsp, %rbp
-
-  cmpb $'+', %al
-  je apply_plus_op
-  cmpb $'-', %al
-  je apply_minus_op
-  jmp apply_sum_op_exit
-
-apply_plus_op:
-  addsd %xmm0, %xmm1
-  jmp apply_sum_op_exit
-
-apply_minus_op:
-  subsd %xmm0, %xmm1
-  jmp apply_sum_op_exit
-
-apply_sum_op_exit:
-  leave
-  ret
-
-apply_product_op:  # %xmm1 ?= %xmm0 (RETURN VALUE IS IN %xmm1)
-  push %rbp
-  mov %rsp, %rbp
-
-  cmpb $'*', %al
-  je apply_mul_op
-  cmpb $'/', %al
-  je apply_div_op
-  cmpb $'%', %al
-  je apply_mod_op
-  jmp apply_product_op_exit
-
-apply_mul_op:
-  mulsd %xmm0, %xmm1
-  jmp apply_product_op_exit
-
-apply_div_op:
-  divsd %xmm0, %xmm1
-  jmp apply_product_op_exit
-
-# Since there is floating-point module operator (native) we need to implement
-# it on our own: x mod y = x - floor(x / y) * y
-apply_mod_op:
-  movsd %xmm1, %xmm2
-  divsd %xmm0, %xmm2
-  roundsd $3, %xmm2, %xmm2
-  mulsd %xmm0, %xmm2
-  subsd %xmm2, %xmm1
-  jmp apply_product_op_exit
-
-apply_product_op_exit:
+skip_whitespaces_exit:
   leave
   ret
 
