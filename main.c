@@ -29,16 +29,16 @@ int main() {
   // Unit test set is not complete but it is enough for now
 #ifdef ADD_TESTS
   // Just some general tests with valid expression
-  char test1[] = "2 + 2*2";
+  char test1[] = "      2 + 2*2            ";
   ASSERT_DBL_EQ(eval_string_expression(test1, strlen(test1)), 6);
 
-  char test2[] = "1 + (-1.1 + 2) * 2 % 1.5";
+  char test2[] = "1 + (-1.1 + 2) * 2 % 1.5                ";
   ASSERT_DBL_EQ(eval_string_expression(test2, strlen(test2)), 1.3);
 
-  char test3[] = "   1   +(3+2.5)%2.5";
+  char test3[] = "   1   +(3+2.5)%2.5         ";
   ASSERT_DBL_EQ(eval_string_expression(test3, strlen(test3)), 1.5);
 
-  char test4[] = "-3.14 % (2 -(-(-(-(-(-1))))))";
+  char test4[] = "-3.14 % (2 -(-(-(-(-(-1)))))) ";
   ASSERT_DBL_EQ(eval_string_expression(test4, strlen(test4)), -0.14);
 
   char test5[] = "-5*-5/5";
@@ -96,9 +96,15 @@ int main() {
     if (chars_read > 0) {  // Ignoring newline character
       input_line[chars_read-1] = 0;
     }
+
+    // Ignoring empty line
+    if (strlen(input_line) == 0) {
+      continue;
+    }
+
     double res = eval_string_expression(input_line, strlen(input_line));
     if (isnan(res)) {
-      printf("\033[1;31mInvalid expression error :(\033[0;m\n");
+      printf("\033[1;31mInvalid expression :(\033[0;m\n");
       continue;
     }
     // I also added awesome style, colors + bold font
