@@ -2,19 +2,17 @@
 #include <inttypes.h>
 #include <string.h>
 #include <math.h>
-
-#define ADD_TESTS
-
-#ifdef ADD_TESTS
+#include <stdlib.h>
 #include <assert.h>
-#endif  // ADD_TESTS
+
+//#define ADD_TESTS
 
 // Implemented in asm module and then linked together
 // If input expression is invalid then output is NaN
 extern double eval_string_expression(const char*, unsigned int);
 
 enum {
-  INPUT_LINE_SIZE = 1024,
+  READ_TO_STRING_BLOCK_SIZE = 1024,
 };
 
 #ifdef ADD_TESTS
@@ -22,12 +20,24 @@ enum {
 #define ASSERT_DBL_EQ(a, b) assert(fabs((a) - (b)) < EPS)
 #endif
 
+// Reads contents from file to string until ch found in input file.
+// Allocates memory with malloc/realloc.
+char* read_to_string(FILE* file, char ch);
+
 // Reading input from stdin and printing evaluated expression
 // All parsing/evaluating logic is implemented in asm
 int main() {
 
   // Unit test set is not complete but it is enough for now
 #ifdef ADD_TESTS
+  // Basic test for read_to_string
+  FILE* test0_file = fopen("abc", "r");
+  assert(test0_file != NULL);
+  char* test0 = read_to_string(test0_file, '\n');
+  char abc[] = "abc";
+  assert(!strcmp(test0, abc));
+  free(test0);
+
   // Just some general tests with valid expression
   char test1[] = "      2 + 2*2            ";
   ASSERT_DBL_EQ(eval_string_expression(test1, strlen(test1)), 6);
@@ -84,32 +94,77 @@ int main() {
   char test18[] = "(1.-1)/(1-1.0)";  // Zero divided by zero is undefined
   assert(isnan(eval_string_expression(test18, strlen(test18))));
 
+  // Testing with a very long numbers as an input (must be NaN)
+  // Must be NaN because very long numbers (15 chars+) are not supported.
+  // (must be NaN even if an expression is valid)
+  FILE* file_with_very_long_number = fopen("very_long_number", "r");
+  assert(file_with_very_long_number != NULL);
+  char* test19 = read_to_string(file_with_very_long_number, '\n');
+  assert(isnan(eval_string_expression(test19, strlen(test19))));
+  fclose(file_with_very_long_number);
+  free(file_with_very_long_number);
+
+  // Testing with long valid expression as an input (must be OK)
+  FILE* file_with_very_long_expr = fopen("very_long_expr", "r");
+  assert(file_with_very_long_expr != NULL);
+  char* test20 = read_to_string(file_with_very_long_expr, '\n');
+  ASSERT_DBL_EQ(eval_string_expression(test20, strlen(test20)), 1.7);
+  fclose(file_with_very_long_expr);
+  free(file_with_very_long_expr);
+
   printf("\033[34mALL TEST CASES PASSED (OK)\033[0;m\n");
 #endif  // ADD_TESTS
 
   while (1) {
-    char input_line[INPUT_LINE_SIZE];
-    if (fgets(input_line, INPUT_LINE_SIZE, stdin) == NULL) {
+    char* input_line = read_to_string(stdin, '\n');
+    if (input_line == NULL) {
       break;
     }
-    int chars_read = strlen(input_line);
-    if (chars_read > 0) {  // Ignoring newline character
-      input_line[chars_read-1] = 0;
-    }
 
+    int input_line_size = strlen(input_line);
     // Ignoring empty line
-    if (strlen(input_line) == 0) {
+    if (input_line_size == 0) {
       continue;
     }
 
-    double res = eval_string_expression(input_line, strlen(input_line));
+    double res = eval_string_expression(input_line, input_line_size);
     if (isnan(res)) {
       printf("\033[1;31mInvalid expression :(\033[0;m\n");
       continue;
     }
-    // I also added awesome style, colors + bold font
-    // It should work fine on most linux
     printf("\033[1;32m%.16g\033[0;m\n", res);
+    free(input_line);
   }
   return 0;
 }
+
+// Cheap implementation of std::vector<char> or std::string logic.
+char* read_to_string(FILE* file, char bad_ch) {
+  // sizeof(char) = 1
+  char* str = malloc(READ_TO_STRING_BLOCK_SIZE*sizeof(char)); 
+  int str_size = READ_TO_STRING_BLOCK_SIZE;
+  int i = 0;
+  while (1) {
+    while (i < str_size) {
+      char ch = fgetc(file);
+      if (ch == bad_ch || ch == 0) {
+        str[i] = 0;  // '\0'
+        return str;
+      }
+      str[i++] = ch;
+    }
+    if (i == str_size) {
+      str = realloc(str, str_size+READ_TO_STRING_BLOCK_SIZE);
+      str_size += READ_TO_STRING_BLOCK_SIZE;
+      if (str == NULL) {
+        return NULL;
+      }
+      continue;
+    }
+    break;
+  }
+  assert(i < str_size);
+  str[i] = 0;  // '\0'
+  return str;
+}
+
