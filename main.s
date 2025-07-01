@@ -198,7 +198,12 @@ eval_primary_number:
   add %rax, %rdi
   lea strtod_end(%rip), %rsi
   # double strtod(const char* str, char** end);
+  # after calling strtod errno is checked (may be set to ERANGE on overflow).
   call strtod
+  call __errno_location  # returns pointer to errno
+  mov (%rax), %rcx
+  cmp $34, %rcx  # 34 is value of ERANGE in linux
+  je eval_primary_exit_after_overflow
   mov strtod_end(%rip), %rax
   sub input_string(%rip), %rax
   mov %rax, current_char_index(%rip)
@@ -223,6 +228,11 @@ eval_primary_exit_with_error:
   movq nan_value(%rip), %xmm0
   leave
   ret
+eval_primary_exit_after_overflow:
+  movq $0, (%rax)  # clean errno
+  movq nan_value(%rip), %xmm0
+  leave
+  ret
 
 
 # Arg #1: character in %rdi.
@@ -240,16 +250,14 @@ match_char:
   call peek_char
   cmp %rdi, %rax
   jz match_char_exit_with_one
-  jmp match_char_exit_with_zero
+  xor %rax, %rax
+  leave
+  ret
 match_char_exit_with_one:
   mov current_char_index(%rip), %rax
   inc %rax
   mov %rax, current_char_index(%rip)
   mov $1, %rax
-  leave
-  ret
-match_char_exit_with_zero:
-  xor %rax, %rax
   leave
   ret
 

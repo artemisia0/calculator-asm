@@ -4,8 +4,9 @@
 #include <math.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <errno.h>
 
-//#define ADD_TESTS
+#define ADD_TESTS
 
 // Implemented in asm module and then linked together
 // If input expression is invalid then output is NaN
@@ -102,15 +103,15 @@ int main() {
   char* test19 = read_to_string(file_with_very_long_number, '\n');
   assert(isnan(eval_string_expression(test19, strlen(test19))));
   fclose(file_with_very_long_number);
-  free(file_with_very_long_number);
+  free(test19);
 
   // Testing with long valid expression as an input (must be OK)
   FILE* file_with_very_long_expr = fopen("very_long_expr", "r");
   assert(file_with_very_long_expr != NULL);
   char* test20 = read_to_string(file_with_very_long_expr, '\n');
-  ASSERT_DBL_EQ(eval_string_expression(test20, strlen(test20)), 1.7);
+  ASSERT_DBL_EQ(eval_string_expression(test20, strlen(test20)), 3.14);
   fclose(file_with_very_long_expr);
-  free(file_with_very_long_expr);
+  free(test20);
 
   printf("\033[34mALL TEST CASES PASSED (OK)\033[0;m\n");
 #endif  // ADD_TESTS
@@ -140,6 +141,7 @@ int main() {
 
 // Cheap implementation of std::vector<char> or std::string logic.
 char* read_to_string(FILE* file, char bad_ch) {
+  assert(file != NULL);
   // sizeof(char) = 1
   char* str = malloc(READ_TO_STRING_BLOCK_SIZE*sizeof(char)); 
   int str_size = READ_TO_STRING_BLOCK_SIZE;
@@ -153,14 +155,18 @@ char* read_to_string(FILE* file, char bad_ch) {
       }
       str[i++] = ch;
     }
+    if (i < str_size) {
+      break;
+    }
     if (i == str_size) {
-      str = realloc(str, str_size+READ_TO_STRING_BLOCK_SIZE);
       str_size += READ_TO_STRING_BLOCK_SIZE;
+      str = realloc(str, str_size);
       if (str == NULL) {
         return NULL;
       }
       continue;
     }
+    assert(i < str_size);
     break;
   }
   assert(i < str_size);
